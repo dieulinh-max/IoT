@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 public class ActionHistoryResponse {
 
     private Integer id;
+    private Integer userId;
     private Integer deviceId;
 
     private String device;
@@ -15,6 +16,10 @@ public class ActionHistoryResponse {
 
     public ActionHistoryResponse(ActionHistory history) {
         this.id = history.getId();
+
+        if (history.getUser() != null) {
+            this.userId = history.getUser().getId();
+        }
 
         if (history.getDevice() != null) {
             this.deviceId = history.getDevice().getId();
@@ -34,6 +39,10 @@ public class ActionHistoryResponse {
 
     public Integer getId() {
         return id;
+    }
+
+    public Integer getUserId() {
+        return userId;
     }
 
     public Integer getDeviceId() {

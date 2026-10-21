@@ -9,7 +9,7 @@ const STUDENT_ID = "B23DCCN481";
 const PROFILE_LINKS = {
   github: {
     label: "github",
-    url: "https://github.com/DieuLinh-PTIT/IoT-Project",
+    url: "https://github.com/dieulinh-max/IoT",
   },
   figma: {
     label: "figma",
@@ -17,11 +17,11 @@ const PROFILE_LINKS = {
   },
   postman: {
     label: "postman",
-    url: "https://minhsoniloveyou-2158417.postman.co/workspace/59442d96-e740-4c11-80ee-ca134aba72cd/collection/54857062-af3ecfc0-1953-4b90-a761-b7bbda161344",
+    url: "https://documenter.getpostman.com/view/54857062/2sBYHURebS",
   },
   pdf: {
     label: "BaoCao",
-    url: "/docs/BaoCao_B23DCCN481.pdf",
+    url: "https://docs.google.com/document/d/1TXR0Wd-vAHg5NkOI1CESGBNqrZC5ocJA/edit",
   },
 };
 
@@ -92,7 +92,7 @@ function Profile() {
         <div className="profile-card">
           <div className="profile-header">
             <div className="profile-avatar-wrapper">
-              <span className="profile-avatar-icon">👩🏻</span>
+              <span className="profile-avatar-icon">👤</span>
             </div>
 
             <h1 className="profile-name">{profileData.name}</h1>

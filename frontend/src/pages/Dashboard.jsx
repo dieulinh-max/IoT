@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+// (thông báo bật/tắt dùng state `notice`, không cần thêm thư viện)
 import { Thermometer, Droplet, Sun, Fan, Lightbulb, Droplets } from "lucide-react";
 import "../styles/Dashboard.css";
 
 const DASHBOARD_API = "http://localhost:8080/api/dashboard";
 const DEVICES_API = "http://localhost:8080/api/devices";
-const REFRESH_MS = 2000;
+const REFRESH_MS = 2000; // Arduino gửi dữ liệu mỗi 2 giây
+const CHART_LIMIT = 20; // 20 điểm = 40 giây gần nhất
 
 const SENSOR_CONFIG = [
   { key: "temperature", label: "NHIỆT ĐỘ", unit: "°C", tone: "red", icon: "thermometer", sensorName: "Temperature" },
@@ -30,6 +32,27 @@ const ICONS = {
   droplets: Droplets,
 };
 
+// Cấu hình 2 khung biểu đồ
+const CHART_PANELS = [
+  {
+    id: "temp-humidity",
+    title: "Nhiệt độ & Độ ẩm",
+    yMax: 150,
+    yStep: 30,
+    series: [
+      { key: "temperature", label: "Nhiệt độ (°C)", color: "#ff8a80" },
+      { key: "humidity", label: "Độ ẩm (%)", color: "#9350ff" },
+    ],
+  },
+  {
+    id: "light",
+    title: "Ánh sáng",
+    yMax: 1050,
+    yStep: 150,
+    series: [{ key: "light", label: "Ánh sáng", color: "#fbbf24" }],
+  },
+];
+
 function getStoredUser() {
   try {
     const raw =
@@ -54,76 +77,81 @@ function TonedIcon({ name, tone, size = "lg" }) {
   );
 }
 
-function formatDateTime(value) {
-  if (!value) return { date: "--", time: "--" };
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    const parts = String(value).split("T");
-    return { date: parts[0] || "--", time: (parts[1] || "--").slice(0, 8) };
+// Định dạng đầy đủ: 2026-10-21 10:02:30
+function formatFullTime(value) {
+  if (!value) return "--";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    return String(value).replace("T", " ").replace("Z", "").slice(0, 19);
   }
-  return {
-    date: date.toLocaleDateString("sv-SE"),
-    time: date.toLocaleTimeString("vi-VN", { hour12: false }),
-  };
+  const p = (n) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
+    `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+  );
 }
 
-function EnvironmentChart({ rows }) {
-  const [activeIndex, setActiveIndex] = useState(0);
+function ChartPanel({ panel, rows, activeIndex, onHover, onLeave }) {
   const width = 804;
-  const height = 420;
-  const left = 58;
-  const right = 20;
-  const top = 24;
-  const bottom = 54;
+  const height = 330;
+  const left = 84;
+  const right = 24;
+  const top = 16;
+  const bottom = 86; // chừa chỗ cho nhãn thời gian xoay nghiêng
   const plotW = width - left - right;
   const plotH = height - top - bottom;
-  const series = [
-    { key: "temperature", label: "Nhiệt độ", unit: "°C", color: "#ff8a80" },
-    { key: "humidity", label: "Độ ẩm", unit: "%", color: "#9350ff" },
-    { key: "light", label: "Ánh sáng", unit: "Lux", color: "#fbbf24" },
-  ];
-  const maxValue = Math.max(
-    100,
-    ...rows.flatMap((r) => series.map((s) => Number(r[s.key])).filter(Number.isFinite))
-  );
-  const yMax = Math.ceil(maxValue / 50) * 50 || 100;
+  const { yMax, yStep, series } = panel;
+
   const x = (i) => left + (rows.length <= 1 ? plotW / 2 : (i / (rows.length - 1)) * plotW);
-  const y = (v) => top + plotH - (Number(v || 0) / yMax) * plotH;
+  const y = (v) => {
+    const n = Math.min(Math.max(Number(v) || 0, 0), yMax);
+    return top + plotH - (n / yMax) * plotH;
+  };
   const makePath = (key) =>
     rows.map((r, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(r[key])}`).join(" ");
-  const active = rows[Math.min(activeIndex, Math.max(rows.length - 1, 0))];
-
-  useEffect(() => {
-    setActiveIndex((i) => Math.min(i, Math.max(rows.length - 1, 0)));
-  }, [rows.length]);
-
-  if (!rows.length) return <div className="dash-chart-wrap">Chưa có dữ liệu biểu đồ.</div>;
+  const step = rows.length <= 1 ? plotW : plotW / (rows.length - 1);
+  const ticks = Array.from({ length: Math.round(yMax / yStep) + 1 }, (_, i) => i * yStep);
 
   return (
-    <div className="dash-chart-wrap" style={{ overflowX: "auto" }}>
-      <svg width="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Biểu đồ dữ liệu cảm biến">
-        {Array.from({ length: 5 }, (_, i) => {
-          const value = (yMax / 4) * i;
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", flexWrap: "wrap", gap: 8 }}>
+        <strong style={{ fontSize: 14 }}>{panel.title}</strong>
+        <ul className="dash-legend" style={{ margin: 0 }}>
+          {series.map((s) => (
+            <li key={s.key}>
+              <i style={{ background: s.color }} />
+              {s.label}
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <svg width="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Biểu đồ ${panel.title}`}>
+        {/* Trục dọc + lưới */}
+        {ticks.map((value) => {
           const yy = y(value);
           return (
-            <g key={i}>
+            <g key={value}>
               <line x1={left} x2={width - right} y1={yy} y2={yy} className="dash-grid-line" />
               <text x={left - 10} y={yy} textAnchor="end" dominantBaseline="middle" className="dash-ytick">
-                {Math.round(value)}
+                {value}
               </text>
             </g>
           );
         })}
+
+        {/* Đường chỉ vị trí đang chọn */}
+        {rows.length > 0 && (
+          <line x1={x(activeIndex)} x2={x(activeIndex)} y1={top} y2={top + plotH} className="dash-guide" />
+        )}
+
+        {/* Đường dữ liệu */}
         {series.map((s) => (
-          <path key={s.key} d={makePath(s.key)} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinecap="round" />
+          <path key={s.key} d={makePath(s.key)} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
         ))}
+
         {rows.map((row, i) => (
-          <g
-            key={`${row.time}-${i}`}
-            onMouseEnter={() => setActiveIndex(i)}
-            onClick={() => setActiveIndex(i)}
-            style={{ cursor: "pointer" }}
-          >
+          <g key={`${row.time}-${i}`}>
             {series.map((s) => (
               <circle
                 key={s.key}
@@ -135,22 +163,63 @@ function EnvironmentChart({ rows }) {
                 strokeWidth="1.5"
               />
             ))}
-            {(i === 0 || i === rows.length - 1 || i === activeIndex || i % Math.ceil(rows.length / 5) === 0) && (
-              <text x={x(i)} y={height - 22} textAnchor="middle" className="dash-xtime">
-                {formatDateTime(row.time).time.slice(0, 5)}
-              </text>
-            )}
+
+            {/* Nhãn thời gian đầy đủ: 2026-10-21 10:02:30 */}
+            <text
+              x={x(i)}
+              y={top + plotH + 16}
+              textAnchor="end"
+              transform={`rotate(-40 ${x(i)} ${top + plotH + 16})`}
+              style={{
+                fontSize: 10,
+                fontWeight: i === activeIndex ? 700 : 500,
+                fill: i === activeIndex ? "#6366f1" : "#334155",
+              }}
+            >
+              {formatFullTime(row.time)}
+            </text>
+
+            {/* Vùng bắt chuột cho từng cột */}
+            <rect
+              x={x(i) - step / 2}
+              y={top}
+              width={step}
+              height={plotH}
+              fill="transparent"
+              style={{ cursor: "pointer" }}
+              onMouseEnter={() => onHover(i)}
+              onMouseLeave={onLeave}
+              onClick={() => onHover(i)}
+            />
           </g>
         ))}
       </svg>
-      {active && (
-        <div className="dash-chart-tooltip">
-          <strong>{active.time ? new Date(active.time).toLocaleString("vi-VN") : "--"}</strong>
-          <div>Nhiệt độ: {active.temperature ?? "--"} °C</div>
-          <div>Độ ẩm: {active.humidity ?? "--"} %</div>
-          <div>Ánh sáng: {active.light ?? "--"} ADC</div>
-        </div>
-      )}
+    </div>
+  );
+}
+
+function EnvironmentChart({ rows }) {
+  const [hoverIndex, setHoverIndex] = useState(null);
+
+  if (!rows.length) return <div className="dash-chart-wrap">Chưa có dữ liệu biểu đồ.</div>;
+
+  // Mặc định hiển thị điểm mới nhất
+  const activeIndex = Math.min(hoverIndex ?? rows.length - 1, rows.length - 1);
+  const active = rows[activeIndex];
+
+  return (
+    <div className="dash-chart-wrap" style={{ overflowX: "auto" }}>
+      {CHART_PANELS.map((panel) => (
+        <ChartPanel
+          key={panel.id}
+          panel={panel}
+          rows={rows}
+          activeIndex={activeIndex}
+          onHover={setHoverIndex}
+          onLeave={() => setHoverIndex(null)}
+        />
+      ))}
+
     </div>
   );
 }
@@ -163,6 +232,15 @@ export default function Dashboard() {
   const [error, setError] = useState("");
   const [controlBusy, setControlBusy] = useState(null);
   const [deviceError, setDeviceError] = useState("");
+  // Thông báo khi bấm bật/tắt: { type: "pending" | "success" | "error", text }
+  const [notice, setNotice] = useState(null);
+
+  // Tự ẩn thông báo sau 3 giây (trừ lúc đang chờ phản hồi)
+  useEffect(() => {
+    if (!notice || notice.type === "pending") return undefined;
+    const timer = window.setTimeout(() => setNotice(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   // Thông tin người dùng lấy từ DB lúc đăng nhập
   const currentUser = useMemo(() => getStoredUser(), []);
@@ -171,7 +249,7 @@ export default function Dashboard() {
     try {
       const [summaryResponse, chartResponse] = await Promise.all([
         fetch(`${DASHBOARD_API}/summary`),
-        fetch(`${DASHBOARD_API}/chart?limit=20`),
+        fetch(`${DASHBOARD_API}/chart?limit=${CHART_LIMIT}`),
       ]);
 
       if (!summaryResponse.ok || !chartResponse.ok) {
@@ -231,8 +309,10 @@ export default function Dashboard() {
     }
 
     const nextStatus = device.status === "ON" ? "OFF" : "ON";
+    const actionText = nextStatus === "ON" ? "BẬT" : "TẮT";
     setControlBusy(device.id);
     setDeviceError("");
+    setNotice({ type: "pending", text: `Đang gửi lệnh ${actionText} thiết bị ${device.name}...` });
 
     try {
       const response = await fetch(`${DEVICES_API}/${device.id}/control`, {
@@ -255,15 +335,48 @@ export default function Dashboard() {
           item.id === device.id ? { ...item, status: nextStatus } : item
         )
       );
+      setNotice({ type: "success", text: `Đã ${actionText} thiết bị ${device.name}` });
     } catch (e) {
       setDeviceError(e.message || "Lỗi điều khiển thiết bị.");
+      setNotice({
+        type: "error",
+        text: `Không thể ${actionText} thiết bị ${device.name}: ${e.message || "Lỗi điều khiển thiết bị."}`,
+      });
     } finally {
       setControlBusy(null);
     }
   };
 
+  const noticeColors = {
+    pending: "#4f46e5",
+    success: "#16a34a",
+    error: "#dc2626",
+  };
+
   return (
     <div className="dash-page">
+      {notice && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            top: 24,
+            right: 24,
+            zIndex: 1000,
+            maxWidth: 360,
+            padding: "12px 18px",
+            borderRadius: 12,
+            color: "#fff",
+            fontSize: 14,
+            fontWeight: 600,
+            background: noticeColors[notice.type],
+            boxShadow: "0 8px 24px rgba(15, 23, 42, 0.25)",
+          }}
+        >
+          {notice.text}
+        </div>
+      )}
       <div className="dash-layout">
         <div className="dash-col">
           <section className="dash-banner">
@@ -292,7 +405,7 @@ export default function Dashboard() {
             <div className="dash-chart-head">
               <div>
                 <h2>Biểu đồ giám sát môi trường</h2>
-                <p>Dữ liệu lịch sử từ Backend</p>
+                <p>Dữ liệu lịch sử từ Backend, cập nhật mỗi 2 giây</p>
               </div>
             </div>
             <EnvironmentChart rows={chartRows} />

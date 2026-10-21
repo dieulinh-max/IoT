@@ -5,6 +5,7 @@ import com.iot.dto.LoginRequest;
 import com.iot.dto.RegisterRequest;
 import com.iot.entity.User;
 import com.iot.repository.UserRepository;
+import com.iot.util.JwtUtil;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,10 +14,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil; // Tiêm JwtUtil
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder, JwtUtil jwtUtil) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.jwtUtil = jwtUtil;
     }
 
     @Transactional
@@ -36,13 +39,15 @@ public class AuthService {
         User user = new User();
         user.setName(request.getName().trim());
         user.setMsv(msv);
-        // Existing schema has Username as required/unique; use MSV as username.
         user.setUsername(msv);
         user.setDate(request.getDate());
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         User saved = userRepository.save(user);
 
-        return new AuthResponse("Đăng ký thành công.", saved.getId(),
+        // Sinh token
+        String token = jwtUtil.generateToken(saved.getMsv());
+
+        return new AuthResponse("Đăng ký thành công.", token, saved.getId(),
                 saved.getName(), saved.getMsv(),
                 saved.getDate() == null ? null : saved.getDate().toString());
     }
@@ -59,7 +64,10 @@ public class AuthService {
             throw new IllegalArgumentException("Mã sinh viên hoặc mật khẩu không đúng.");
         }
 
-        return new AuthResponse("Đăng nhập thành công.", user.getId(),
+        // Sinh token khi đăng nhập thành công
+        String token = jwtUtil.generateToken(user.getMsv());
+
+        return new AuthResponse("Đăng nhập thành công.", token, user.getId(),
                 user.getName(), user.getMsv(),
                 user.getDate() == null ? null : user.getDate().toString());
     }
