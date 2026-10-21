@@ -1,0 +1,143 @@
+/* ================================
+   SIDEBAR  (style giống Dashboard cũ / Figma)
+================================ */
+
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+
+  /* luôn cao bằng màn hình, đứng yên khi cuộn trang or fixed*/
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  min-height: 100vh;
+
+  background: #0d1730;
+
+  border-radius: 0 20px 20px 0;
+
+  display: flex;
+  flex-direction: column;
+
+  padding: 40px 16px;
+
+  box-sizing: border-box;
+
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+
+/* ================================
+   BRAND
+================================ */
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+
+  gap: 12px;
+
+  padding: 0 16px;
+  margin-bottom: 50px;
+
+  font-size: 20px;
+  font-weight: 700;
+
+  color: #ffffff;
+}
+
+.sidebar-brand b {
+  color: #818cf8;
+  font-weight: 700;
+}
+
+
+/* LOGO */
+
+.sidebar-logo {
+  width: 40px;
+  height: 40px;
+
+  flex-shrink: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 12px;
+
+  color: #ffffff;
+
+  background: linear-gradient(135deg, #6366f1, #7c3aed);
+}
+
+
+/* ================================
+   NAVIGATION
+================================ */
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+
+  gap: 10px;
+}
+
+
+/* ================================
+   NAV ITEM
+================================ */
+
+.sidebar-nav-item {
+  display: flex;
+  align-items: center;
+
+  gap: 12px;
+
+  width: 100%;
+  height: 48px;
+
+  padding: 0 16px 0 30px;
+
+  box-sizing: border-box;
+
+  border-radius: 12px;
+
+  text-decoration: none;
+
+  color: #94a3b8;
+
+  font-size: 14px;
+  font-weight: 400;
+
+  transition:
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+
+/* Hover */
+
+.sidebar-nav-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+
+  color: #ffffff;
+}
+
+
+/* Active */
+
+.sidebar-nav-item.active {
+  background: #6366f1;
+
+  color: #ffffff;
+
+  font-weight: 700;
+}
+
+
+/* Icon */
+
+.sidebar-nav-item svg {
+  flex-shrink: 0;
+}
