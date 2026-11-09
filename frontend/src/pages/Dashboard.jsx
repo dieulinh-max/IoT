@@ -1,27 +1,68 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-// (thông báo bật/tắt dùng state `notice`, không cần thêm thư viện)
-import { Thermometer, Droplet, Sun, Fan, Lightbulb, Droplets } from "lucide-react";
+
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
+import {
+  Thermometer,
+  Droplet,
+  Sun,
+  Fan,
+  Lightbulb,
+  Droplets,
+} from "lucide-react";
+
 import "../styles/Dashboard.css";
 
 const DASHBOARD_API = "http://localhost:8080/api/dashboard";
 const DEVICES_API = "http://localhost:8080/api/devices";
-const REFRESH_MS = 2000; // Arduino gửi dữ liệu mỗi 2 giây
-const CHART_LIMIT = 20; // 20 điểm = 40 giây gần nhất
 
+const REFRESH_MS = 2000;
+const CHART_LIMIT = 20;
+
+// Cấu hình các thẻ cảm biến
 const SENSOR_CONFIG = [
-  { key: "temperature", label: "NHIỆT ĐỘ", unit: "°C", tone: "red", icon: "thermometer", sensorName: "Temperature" },
-  { key: "humidity", label: "ĐỘ ẨM", unit: "%", tone: "purple", icon: "droplet", sensorName: "Humidity" },
-  { key: "light", label: "ÁNH SÁNG", unit: "Lux", tone: "yellow", icon: "sun", sensorName: "Light" },
+  {
+    key: "temperature",
+    label: "NHIỆT ĐỘ",
+    unit: "°C",
+    tone: "red",
+    icon: "thermometer",
+    sensorName: "Temperature",
+  },
+  {
+    key: "humidity",
+    label: "ĐỘ ẨM",
+    unit: "%",
+    tone: "purple",
+    icon: "droplet",
+    sensorName: "Humidity",
+  },
+  {
+    key: "light",
+    label: "ÁNH SÁNG",
+    unit: "Lux",
+    tone: "yellow",
+    icon: "sun",
+    sensorName: "Light",
+  },
 ];
 
-// Map theo tên thiết bị trong DB (viết hoa)
+// Cấu hình biểu tượng thiết bị
 const DEVICE_CONFIG = {
-  "FAN": { icon: "fan", tone: "red" },
-  "LIGHT": { icon: "lightbulb", tone: "yellow" },
+  FAN: { icon: "fan", tone: "red" },
+  LIGHT: { icon: "lightbulb", tone: "yellow" },
   "LED LIGHT": { icon: "lightbulb", tone: "yellow" },
-  "HUMIDIFIER": { icon: "droplets", tone: "purple" },
+  HUMIDIFIER: { icon: "droplets", tone: "purple" },
 };
-const DEFAULT_DEVICE_CONFIG = { icon: "fan", tone: "red" };
+
+const DEFAULT_DEVICE_CONFIG = {
+  icon: "fan",
+  tone: "red",
+};
 
 const ICONS = {
   thermometer: Thermometer,
@@ -32,7 +73,7 @@ const ICONS = {
   droplets: Droplets,
 };
 
-// Cấu hình 2 khung biểu đồ
+// Cấu hình biểu đồ
 const CHART_PANELS = [
   {
     id: "temp-humidity",
@@ -40,8 +81,16 @@ const CHART_PANELS = [
     yMax: 150,
     yStep: 30,
     series: [
-      { key: "temperature", label: "Nhiệt độ (°C)", color: "#ff8a80" },
-      { key: "humidity", label: "Độ ẩm (%)", color: "#9350ff" },
+      {
+        key: "temperature",
+        label: "Nhiệt độ (°C)",
+        color: "#ff8a80",
+      },
+      {
+        key: "humidity",
+        label: "Độ ẩm (%)",
+        color: "#9350ff",
+      },
     ],
   },
   {
@@ -49,91 +98,188 @@ const CHART_PANELS = [
     title: "Ánh sáng",
     yMax: 1050,
     yStep: 150,
-    series: [{ key: "light", label: "Ánh sáng", color: "#fbbf24" }],
+    series: [
+      {
+        key: "light",
+        label: "Ánh sáng",
+        color: "#fbbf24",
+      },
+    ],
   },
 ];
 
+// Lấy thông tin người dùng sau khi đăng nhập
 function getStoredUser() {
   try {
     const raw =
       localStorage.getItem("sensorIoTUser") ||
       sessionStorage.getItem("sensorIoTUser");
+
     return raw ? JSON.parse(raw) : null;
-  } catch {
+  } catch (error) {
+    console.error("Không đọc được thông tin người dùng:", error);
     return null;
   }
+}
+
+// Lấy JWT từ đối tượng người dùng
+function getAuthHeaders(extraHeaders = {}) {
+  const user = getStoredUser();
+  const token = user?.token;
+
+  if (!token) {
+    throw new Error(
+      "Không tìm thấy JWT. Vui lòng đăng xuất và đăng nhập lại."
+    );
+  }
+
+  return {
+    ...extraHeaders,
+    Authorization: `Bearer ${token}`,
+  };
 }
 
 function getCurrentUserId() {
   return getStoredUser()?.id ?? null;
 }
 
+// Biểu tượng có màu sắc
 function TonedIcon({ name, tone, size = "lg" }) {
   const Icon = ICONS[name] || Thermometer;
+
   return (
     <span className={`dash-icon dash-icon--${size} tone-${tone}`}>
-      <Icon size={size === "lg" ? 20 : 24} strokeWidth={2.2} />
+      <Icon
+        size={size === "lg" ? 20 : 24}
+        strokeWidth={2.2}
+      />
     </span>
   );
 }
 
-// Định dạng đầy đủ: 2026-10-21 10:02:30
+// Định dạng thời gian
 function formatFullTime(value) {
   if (!value) return "--";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) {
-    return String(value).replace("T", " ").replace("Z", "").slice(0, 19);
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value)
+      .replace("T", " ")
+      .replace("Z", "")
+      .slice(0, 19);
   }
-  const p = (n) => String(n).padStart(2, "0");
+
+  const pad = (number) => String(number).padStart(2, "0");
+
   return (
-    `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ` +
-    `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
   );
 }
 
-function ChartPanel({ panel, rows, activeIndex, onHover, onLeave }) {
+// Một biểu đồ
+function ChartPanel({
+  panel,
+  rows,
+  activeIndex,
+  onHover,
+  onLeave,
+}) {
   const width = 804;
   const height = 330;
   const left = 84;
   const right = 24;
   const top = 16;
-  const bottom = 86; // chừa chỗ cho nhãn thời gian xoay nghiêng
+  const bottom = 86;
+
   const plotW = width - left - right;
   const plotH = height - top - bottom;
+
   const { yMax, yStep, series } = panel;
 
-  const x = (i) => left + (rows.length <= 1 ? plotW / 2 : (i / (rows.length - 1)) * plotW);
-  const y = (v) => {
-    const n = Math.min(Math.max(Number(v) || 0, 0), yMax);
-    return top + plotH - (n / yMax) * plotH;
+  const x = (index) =>
+    left +
+    (rows.length <= 1
+      ? plotW / 2
+      : (index / (rows.length - 1)) * plotW);
+
+  const y = (value) => {
+    const number = Math.min(
+      Math.max(Number(value) || 0, 0),
+      yMax
+    );
+
+    return top + plotH - (number / yMax) * plotH;
   };
+
   const makePath = (key) =>
-    rows.map((r, i) => `${i === 0 ? "M" : "L"} ${x(i)} ${y(r[key])}`).join(" ");
-  const step = rows.length <= 1 ? plotW : plotW / (rows.length - 1);
-  const ticks = Array.from({ length: Math.round(yMax / yStep) + 1 }, (_, i) => i * yStep);
+    rows
+      .map(
+        (row, index) =>
+          `${index === 0 ? "M" : "L"} ${x(index)} ${y(row[key])}`
+      )
+      .join(" ");
+
+  const step =
+    rows.length <= 1 ? plotW : plotW / (rows.length - 1);
+
+  const ticks = Array.from(
+    { length: Math.round(yMax / yStep) + 1 },
+    (_, index) => index * yStep
+  );
 
   return (
     <div style={{ marginBottom: 8 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", flexWrap: "wrap", gap: 8 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "0 32px",
+          flexWrap: "wrap",
+          gap: 8,
+        }}
+      >
         <strong style={{ fontSize: 14 }}>{panel.title}</strong>
+
         <ul className="dash-legend" style={{ margin: 0 }}>
-          {series.map((s) => (
-            <li key={s.key}>
-              <i style={{ background: s.color }} />
-              {s.label}
+          {series.map((item) => (
+            <li key={item.key}>
+              <i style={{ background: item.color }} />
+              {item.label}
             </li>
           ))}
         </ul>
       </div>
 
-      <svg width="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Biểu đồ ${panel.title}`}>
-        {/* Trục dọc + lưới */}
+      <svg
+        width="100%"
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={`Biểu đồ ${panel.title}`}
+      >
+        {/* Trục dọc và đường lưới */}
         {ticks.map((value) => {
           const yy = y(value);
+
           return (
             <g key={value}>
-              <line x1={left} x2={width - right} y1={yy} y2={yy} className="dash-grid-line" />
-              <text x={left - 10} y={yy} textAnchor="end" dominantBaseline="middle" className="dash-ytick">
+              <line
+                x1={left}
+                x2={width - right}
+                y1={yy}
+                y2={yy}
+                className="dash-grid-line"
+              />
+
+              <text
+                x={left - 10}
+                y={yy}
+                textAnchor="end"
+                dominantBaseline="middle"
+                className="dash-ytick"
+              >
                 {value}
               </text>
             </g>
@@ -142,54 +288,71 @@ function ChartPanel({ panel, rows, activeIndex, onHover, onLeave }) {
 
         {/* Đường chỉ vị trí đang chọn */}
         {rows.length > 0 && (
-          <line x1={x(activeIndex)} x2={x(activeIndex)} y1={top} y2={top + plotH} className="dash-guide" />
+          <line
+            x1={x(activeIndex)}
+            x2={x(activeIndex)}
+            y1={top}
+            y2={top + plotH}
+            className="dash-guide"
+          />
         )}
 
         {/* Đường dữ liệu */}
-        {series.map((s) => (
-          <path key={s.key} d={makePath(s.key)} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        {series.map((item) => (
+          <path
+            key={item.key}
+            d={makePath(item.key)}
+            fill="none"
+            stroke={item.color}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         ))}
 
-        {rows.map((row, i) => (
-          <g key={`${row.time}-${i}`}>
-            {series.map((s) => (
+        {rows.map((row, index) => (
+          <g key={`${row.time}-${index}`}>
+            {series.map((item) => (
               <circle
-                key={s.key}
-                cx={x(i)}
-                cy={y(row[s.key])}
-                r={i === activeIndex ? 5 : 3}
-                fill={s.color}
+                key={item.key}
+                cx={x(index)}
+                cy={y(row[item.key])}
+                r={index === activeIndex ? 5 : 3}
+                fill={item.color}
                 stroke="#fff"
                 strokeWidth="1.5"
               />
             ))}
 
-            {/* Nhãn thời gian đầy đủ: 2026-10-21 10:02:30 */}
+            {/* Nhãn thời gian */}
             <text
-              x={x(i)}
+              x={x(index)}
               y={top + plotH + 16}
               textAnchor="end"
-              transform={`rotate(-40 ${x(i)} ${top + plotH + 16})`}
+              transform={`rotate(-40 ${x(index)} ${top + plotH + 16})`}
               style={{
                 fontSize: 10,
-                fontWeight: i === activeIndex ? 700 : 500,
-                fill: i === activeIndex ? "#6366f1" : "#334155",
+                fontWeight: index === activeIndex ? 700 : 500,
+                fill:
+                  index === activeIndex
+                    ? "#6366f1"
+                    : "#334155",
               }}
             >
               {formatFullTime(row.time)}
             </text>
 
-            {/* Vùng bắt chuột cho từng cột */}
+            {/* Vùng tương tác trên biểu đồ */}
             <rect
-              x={x(i) - step / 2}
+              x={x(index) - step / 2}
               y={top}
               width={step}
               height={plotH}
               fill="transparent"
               style={{ cursor: "pointer" }}
-              onMouseEnter={() => onHover(i)}
+              onMouseEnter={() => onHover(index)}
               onMouseLeave={onLeave}
-              onClick={() => onHover(i)}
+              onClick={() => onHover(index)}
             />
           </g>
         ))}
@@ -198,17 +361,28 @@ function ChartPanel({ panel, rows, activeIndex, onHover, onLeave }) {
   );
 }
 
+// Hai biểu đồ môi trường
 function EnvironmentChart({ rows }) {
   const [hoverIndex, setHoverIndex] = useState(null);
 
-  if (!rows.length) return <div className="dash-chart-wrap">Chưa có dữ liệu biểu đồ.</div>;
+  if (!rows.length) {
+    return (
+      <div className="dash-chart-wrap">
+        Chưa có dữ liệu biểu đồ.
+      </div>
+    );
+  }
 
-  // Mặc định hiển thị điểm mới nhất
-  const activeIndex = Math.min(hoverIndex ?? rows.length - 1, rows.length - 1);
-  const active = rows[activeIndex];
+  const activeIndex = Math.min(
+    hoverIndex ?? rows.length - 1,
+    rows.length - 1
+  );
 
   return (
-    <div className="dash-chart-wrap" style={{ overflowX: "auto" }}>
+    <div
+      className="dash-chart-wrap"
+      style={{ overflowX: "auto" }}
+    >
       {CHART_PANELS.map((panel) => (
         <ChartPanel
           key={panel.id}
@@ -219,7 +393,6 @@ function EnvironmentChart({ rows }) {
           onLeave={() => setHoverIndex(null)}
         />
       ))}
-
     </div>
   );
 }
@@ -228,32 +401,51 @@ export default function Dashboard() {
   const [summary, setSummary] = useState(null);
   const [chartRows, setChartRows] = useState([]);
   const [devices, setDevices] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [controlBusy, setControlBusy] = useState(null);
   const [deviceError, setDeviceError] = useState("");
-  // Thông báo khi bấm bật/tắt: { type: "pending" | "success" | "error", text }
   const [notice, setNotice] = useState(null);
 
-  // Tự ẩn thông báo sau 3 giây (trừ lúc đang chờ phản hồi)
+  // Thông tin người dùng hiện tại
+  const currentUser = useMemo(() => getStoredUser(), []);
+
+  // Tự ẩn thông báo sau 3 giây
   useEffect(() => {
-    if (!notice || notice.type === "pending") return undefined;
-    const timer = window.setTimeout(() => setNotice(null), 3000);
+    if (!notice || notice.type === "pending") {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setNotice(null);
+    }, 3000);
+
     return () => window.clearTimeout(timer);
   }, [notice]);
 
-  // Thông tin người dùng lấy từ DB lúc đăng nhập
-  const currentUser = useMemo(() => getStoredUser(), []);
-
+  // Tải dữ liệu cảm biến và biểu đồ, có gửi JWT
   const loadDashboard = useCallback(async () => {
     try {
+      const headers = getAuthHeaders();
+
       const [summaryResponse, chartResponse] = await Promise.all([
-        fetch(`${DASHBOARD_API}/summary`),
-        fetch(`${DASHBOARD_API}/chart?limit=${CHART_LIMIT}`),
+        fetch(`${DASHBOARD_API}/summary`, { headers }),
+        fetch(`${DASHBOARD_API}/chart?limit=${CHART_LIMIT}`, {
+          headers,
+        }),
       ]);
 
-      if (!summaryResponse.ok || !chartResponse.ok) {
-        throw new Error("Không thể tải dữ liệu Dashboard.");
+      if (!summaryResponse.ok) {
+        throw new Error(
+          `Summary API lỗi HTTP ${summaryResponse.status}`
+        );
+      }
+
+      if (!chartResponse.ok) {
+        throw new Error(
+          `Chart API lỗi HTTP ${chartResponse.status}`
+        );
       }
 
       const summaryData = await summaryResponse.json();
@@ -263,84 +455,139 @@ export default function Dashboard() {
       setChartRows(Array.isArray(chartData) ? chartData : []);
       setError("");
     } catch (e) {
-      setError(e.message || "Không kết nối được Backend.");
+      setError(
+        e.message || "Không thể tải dữ liệu Dashboard."
+      );
     } finally {
       setLoading(false);
     }
   }, []);
 
+  // Tải danh sách thiết bị, có gửi JWT
   const loadDevices = useCallback(async () => {
     try {
-      const response = await fetch(DEVICES_API);
-      if (!response.ok) throw new Error(`GET /api/devices lỗi ${response.status}`);
+      const headers = getAuthHeaders();
+      const response = await fetch(DEVICES_API, { headers });
+
+      if (!response.ok) {
+        throw new Error(
+          `GET /api/devices lỗi HTTP ${response.status}`
+        );
+      }
+
       const data = await response.json();
-      setDevices(Array.isArray(data) ? data : data.content || []);
+
+      setDevices(
+        Array.isArray(data) ? data : data.content || []
+      );
+      setDeviceError("");
     } catch (e) {
-      setDeviceError(e.message || "Không thể tải danh sách thiết bị.");
+      setDeviceError(
+        e.message || "Không thể tải danh sách thiết bị."
+      );
     }
   }, []);
 
+  // Tải lần đầu và làm mới dữ liệu mỗi 2 giây
   useEffect(() => {
     loadDashboard();
     loadDevices();
-    const timer = window.setInterval(loadDashboard, REFRESH_MS);
+
+    const timer = window.setInterval(() => {
+      loadDashboard();
+    }, REFRESH_MS);
+
     return () => window.clearInterval(timer);
   }, [loadDashboard, loadDevices]);
 
+  // Chuẩn hóa dữ liệu các thẻ cảm biến
   const stats = useMemo(
     () =>
       SENSOR_CONFIG.map((config) => {
         const value = summary?.[config.key];
+
         return {
           ...config,
           value: value?.value ?? null,
           unit: value?.unit || config.unit,
-          sensorName: value?.sensorName || config.sensorName,
+          sensorName:
+            value?.sensorName || config.sensorName,
         };
       }),
     [summary]
   );
 
+  // Bật hoặc tắt thiết bị
   const toggleDevice = async (device) => {
-    const userId = getCurrentUserId();
+    const user = getStoredUser();
+    const userId = user?.id;
+    const nextStatus =
+      device.status === "ON" ? "OFF" : "ON";
+    const actionText = nextStatus === "ON" ? "BẬT" : "TẮT";
+
     if (userId == null) {
-      setDeviceError("Chưa đăng nhập, không xác định được người dùng.");
+      setDeviceError(
+        "Không xác định được người dùng. Vui lòng đăng nhập lại."
+      );
       return;
     }
 
-    const nextStatus = device.status === "ON" ? "OFF" : "ON";
-    const actionText = nextStatus === "ON" ? "BẬT" : "TẮT";
     setControlBusy(device.id);
     setDeviceError("");
-    setNotice({ type: "pending", text: `Đang gửi lệnh ${actionText} thiết bị ${device.name}...` });
+    setNotice({
+      type: "pending",
+      text: `Đang gửi lệnh ${actionText} thiết bị ${device.name}...`,
+    });
 
     try {
-      const response = await fetch(`${DEVICES_API}/${device.id}/control`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, action: nextStatus }),
+      const headers = getAuthHeaders({
+        "Content-Type": "application/json",
       });
+
+      const response = await fetch(
+        `${DEVICES_API}/${device.id}/control`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            userId,
+            action: nextStatus,
+          }),
+        }
+      );
 
       const result = await response.json().catch(() => null);
 
-      // Backend trả status "SUCCESS" hoặc "FAIL" (FAIL kèm HTTP 503)
       if (!response.ok || result?.status !== "SUCCESS") {
         throw new Error(
-          result?.message || result?.error || "Không thể gửi lệnh điều khiển thiết bị."
+          result?.message ||
+            result?.error ||
+            `Điều khiển thiết bị thất bại (HTTP ${response.status}).`
         );
       }
 
       setDevices((current) =>
         current.map((item) =>
-          item.id === device.id ? { ...item, status: nextStatus } : item
+          item.id === device.id
+            ? { ...item, status: nextStatus }
+            : item
         )
       );
-      setNotice({ type: "success", text: `Đã ${actionText} thiết bị ${device.name}` });
+
+      setNotice({
+        type: "success",
+        text: `Đã ${actionText} thiết bị ${device.name}`,
+      });
     } catch (e) {
-      setDeviceError(e.message || "Lỗi điều khiển thiết bị.");
+      setDeviceError(
+        e.message || "Lỗi điều khiển thiết bị."
+      );
+
       setNotice({
         type: "error",
-        text: `Không thể ${actionText} thiết bị ${device.name}: ${e.message || "Lỗi điều khiển thiết bị."}`,
+        text: `Không thể ${actionText} thiết bị ${device.name}: ${
+          e.message || "Lỗi điều khiển thiết bị."
+        }`,
       });
     } finally {
       setControlBusy(null);
@@ -355,6 +602,7 @@ export default function Dashboard() {
 
   return (
     <div className="dash-page">
+      {/* Thông báo bật/tắt thiết bị */}
       {notice && (
         <div
           role="status"
@@ -377,78 +625,139 @@ export default function Dashboard() {
           {notice.text}
         </div>
       )}
+
       <div className="dash-layout">
+        {/* Cột bên trái */}
         <div className="dash-col">
           <section className="dash-banner">
             <h1>Dashboard IoT 👋</h1>
-            <p>Giám sát dữ liệu cảm biến được ghi nhận từ hệ thống.</p>
+            <p>
+              Giám sát dữ liệu cảm biến được ghi nhận từ hệ thống.
+            </p>
+
             {error && <p role="alert">{error}</p>}
             {loading && <p>Đang tải dữ liệu...</p>}
           </section>
 
+          {/* Các thẻ thông số */}
           <section className="dash-stats">
             {stats.map((item) => (
-              <article key={item.key} className="dash-card dash-stat">
+              <article
+                key={item.key}
+                className="dash-card dash-stat"
+              >
                 <div className="dash-stat-head">
-                  <TonedIcon name={item.icon} tone={item.tone} />
-                  <span className="dash-stat-label">{item.label}</span>
+                  <TonedIcon
+                    name={item.icon}
+                    tone={item.tone}
+                  />
+                  <span className="dash-stat-label">
+                    {item.label}
+                  </span>
                 </div>
+
                 <div className="dash-stat-value">
-                  {item.value == null ? "--" : Number(item.value).toFixed(item.key === "light" ? 0 : 1)}
+                  {item.value == null
+                    ? "--"
+                    : Number(item.value).toFixed(
+                        item.key === "light" ? 0 : 1
+                      )}
                   <small>{item.unit}</small>
                 </div>
               </article>
             ))}
           </section>
 
+          {/* Biểu đồ */}
           <section className="dash-card dash-chart">
             <div className="dash-chart-head">
               <div>
                 <h2>Biểu đồ giám sát môi trường</h2>
-                <p>Dữ liệu lịch sử từ Backend, cập nhật mỗi 2 giây</p>
+                <p>
+                  Dữ liệu lịch sử từ Backend, cập nhật mỗi 2 giây
+                </p>
               </div>
             </div>
+
             <EnvironmentChart rows={chartRows} />
           </section>
         </div>
 
+        {/* Cột bên phải */}
         <div className="dash-col dash-col--right">
+          {/* Thông tin người dùng */}
           <section className="dash-card dash-profile">
             <div className="dash-avatar">
               <span>👤</span>
               <i className="dash-avatar-dot" />
             </div>
+
             <div className="dash-profile-info">
-              <strong>{currentUser?.name || "Người dùng"}</strong>
-              <span>{currentUser?.msv ? `MSV: ${currentUser.msv}` : "Cập nhật tự động mỗi 2 giây"}</span>
+              <strong>
+                {currentUser?.name || "Người dùng"}
+              </strong>
+
+              <span>
+                {currentUser?.msv
+                  ? `MSV: ${currentUser.msv}`
+                  : "Cập nhật tự động mỗi 2 giây"}
+              </span>
             </div>
           </section>
 
+          {/* Điều khiển thiết bị */}
           <section className="dash-card dash-devices">
             <h3>Điều khiển thiết bị</h3>
-            <p className="dash-devices-sub">Trạng thái lấy từ Backend</p>
-            {deviceError && <p role="alert" style={{ color: "red" }}>{deviceError}</p>}
+            <p className="dash-devices-sub">
+              Trạng thái lấy từ Backend
+            </p>
+
+            {deviceError && (
+              <p role="alert" style={{ color: "red" }}>
+                {deviceError}
+              </p>
+            )}
+
             {devices.length === 0 ? (
-              <p>Chưa có dữ liệu thiết bị hoặc API /api/devices chưa được triển khai.</p>
+              <p>
+                Chưa có dữ liệu thiết bị hoặc API /api/devices
+                chưa được triển khai.
+              </p>
             ) : (
               <ul className="dash-device-list">
                 {devices.map((device) => {
                   const config =
-                    DEVICE_CONFIG[device.name?.trim().toUpperCase()] || DEFAULT_DEVICE_CONFIG;
+                    DEVICE_CONFIG[
+                      device.name?.trim().toUpperCase()
+                    ] || DEFAULT_DEVICE_CONFIG;
+
                   return (
-                    <li key={device.id} className="dash-device">
-                      <TonedIcon name={config.icon} tone={config.tone} size="xl" />
+                    <li
+                      key={device.id}
+                      className="dash-device"
+                    >
+                      <TonedIcon
+                        name={config.icon}
+                        tone={config.tone}
+                        size="xl"
+                      />
+
                       <div className="dash-device-text">
                         <strong>{device.name}</strong>
-                        <span>{device.description || device.status}</span>
+                        <span>
+                          {device.description || device.status}
+                        </span>
                       </div>
+
                       <button
                         type="button"
                         role="switch"
                         aria-checked={device.status === "ON"}
                         aria-label={`Điều khiển ${device.name}`}
                         disabled={controlBusy === device.id}
-                        className={`dash-switch ${device.status === "ON" ? "is-on" : ""}`}
+                        className={`dash-switch ${
+                          device.status === "ON" ? "is-on" : ""
+                        }`}
                         onClick={() => toggleDevice(device)}
                       >
                         <i />

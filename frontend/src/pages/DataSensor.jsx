@@ -1,3 +1,4 @@
+
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, Clock, X } from "lucide-react";
 import "../styles/DataSensor.css";
@@ -5,7 +6,6 @@ import "../styles/DataSensor.css";
 const API = "http://localhost:8080/api/sensor-data";
 const ROWS_OPTIONS = [10, 20, 50, 100];
 
-// Đọc thông tin người dùng đã lưu lúc đăng nhập (lấy từ DB)
 function getStoredUser() {
   try {
     const raw =
@@ -17,21 +17,14 @@ function getStoredUser() {
   }
 }
 
-// Tạo danh sách trang
 const getPages = (current, total) => {
-  if (total <= 5) {
-    return Array.from({ length: total }, (_, i) => i + 1);
-  }
-  if (current <= 3) {
-    return [1, 2, 3, "dots-end", total];
-  }
-  if (current >= total - 2) {
+  if (total <= 5) return Array.from({ length: total }, (_, i) => i + 1);
+  if (current <= 3) return [1, 2, 3, "dots-end", total];
+  if (current >= total - 2)
     return [1, "dots-start", total - 2, total - 1, total];
-  }
   return [1, "dots-start", current, "dots-end", total];
 };
 
-// Kiểm tra ngày có hợp lệ hay không
 const isValidDate = (value) => {
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return false;
@@ -48,7 +41,6 @@ const isValidDate = (value) => {
   );
 };
 
-// Chuẩn hóa một mốc thời gian
 const normalizeTimePoint = (raw, fallbackDate = null) => {
   const value = raw.trim().replace("T", " ");
 
@@ -61,7 +53,6 @@ const normalizeTimePoint = (raw, fallbackDate = null) => {
 
     if (!isValidDate(date)) return null;
     if (hour === undefined) return date;
-
     if (Number(hour) > 23) return null;
     if (minute !== undefined && Number(minute) > 59) return null;
     if (second !== undefined && Number(second) > 59) return null;
@@ -72,7 +63,9 @@ const normalizeTimePoint = (raw, fallbackDate = null) => {
     return result;
   }
 
-  const timeMatch = value.match(/^(\d{2})(?::(\d{2})(?::(\d{2}))?)?$/);
+  const timeMatch = value.match(
+    /^(\d{2})(?::(\d{2})(?::(\d{2}))?)?$/
+  );
 
   if (timeMatch && fallbackDate && isValidDate(fallbackDate)) {
     const [, hour, minute, second] = timeMatch;
@@ -90,20 +83,16 @@ const normalizeTimePoint = (raw, fallbackDate = null) => {
   return null;
 };
 
-// Đọc ô thời gian và tách thành startTime, endTime
 const parseRange = (text) => {
   const value = text.trim();
 
-  if (!value) {
-    return { startTime: null, endTime: null };
-  }
+  if (!value) return { startTime: null, endTime: null };
 
   const parts = value.split(/\s+-\s+/);
 
   if (parts.length === 1) {
     const startTime = normalizeTimePoint(parts[0]);
-    if (!startTime) return null;
-    return { startTime, endTime: null };
+    return startTime ? { startTime, endTime: null } : null;
   }
 
   if (parts.length !== 2) return null;
@@ -113,25 +102,22 @@ const parseRange = (text) => {
 
   const dateMatch = startTime.match(/^(\d{4}-\d{2}-\d{2})/);
   const fallbackDate = dateMatch ? dateMatch[1] : null;
-
   const endTime = normalizeTimePoint(parts[1], fallbackDate);
+
   if (!endTime) return null;
 
   return { startTime, endTime };
 };
 
-// Định dạng thời gian hiển thị
-const formatTime = (value) => {
-  if (!value) return "--";
-  return String(value).replace("T", " ").replace("Z", "").slice(0, 19);
-};
+const formatTime = (value) =>
+  value
+    ? String(value).replace("T", " ").replace("Z", "").slice(0, 19)
+    : "--";
 
 function DataSensor() {
-  // Bộ lọc đang chọn trên form giao diện (chưa kích hoạt gọi API)
   const [sensorName, setSensorName] = useState("all");
   const [dateInput, setDateInput] = useState("");
 
-  // Bộ lọc ĐÃ ĐƯỢC ÁP DỤNG sau khi ấn "Tìm kiếm"
   const [appliedFilters, setAppliedFilters] = useState({
     sensorName: "all",
     startTime: null,
@@ -153,12 +139,19 @@ function DataSensor() {
 
   const currentUser = useMemo(() => getStoredUser(), []);
 
-  // Gọi API lấy dữ liệu chỉ dựa vào appliedFilters
   const loadData = useCallback(async () => {
     setLoading(true);
     setError("");
 
     try {
+      // Lấy JWT từ object người dùng đã lưu khi đăng nhập.
+      const user = getStoredUser();
+      const token = user?.token;
+
+      if (!token) {
+        throw new Error("Không tìm thấy JWT. Vui lòng đăng nhập lại.");
+      }
+
       const params = new URLSearchParams({
         page: String(currentPage - 1),
         size: String(rowsPerPage),
@@ -174,16 +167,24 @@ function DataSensor() {
         params.set("endTime", appliedFilters.endTime);
       }
 
-      const response = await fetch(`${API}?${params.toString()}`);
+      const response = await fetch(`${API}?${params.toString()}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      });
 
       if (!response.ok) {
-        let message = "Không tải được dữ liệu cảm biến.";
+        let message = `Không tải được dữ liệu cảm biến (HTTP ${response.status}).`;
+
         try {
           const body = await response.json();
-          message = body.error || body.message || message;
+          message = body.message || body.error || message;
         } catch {
-          // Response không phải JSON
+          // Response không phải JSON.
         }
+
         throw new Error(message);
       }
 
@@ -196,7 +197,11 @@ function DataSensor() {
       });
     } catch (e) {
       setError(e.message || "Không kết nối được Backend.");
-      setPageData({ content: [], totalElements: 0, totalPages: 0 });
+      setPageData({
+        content: [],
+        totalElements: 0,
+        totalPages: 0,
+      });
     } finally {
       setLoading(false);
     }
@@ -206,7 +211,6 @@ function DataSensor() {
     loadData();
   }, [loadData]);
 
-  // Chỉ kích hoạt lọc khi người dùng nhấn Tìm kiếm (hoặc Enter)
   const handleSearch = () => {
     let range = { startTime: null, endTime: null };
 
@@ -221,6 +225,7 @@ function DataSensor() {
         );
         return;
       }
+
       range = parsed;
     }
 
@@ -228,7 +233,6 @@ function DataSensor() {
     setError("");
     setCurrentPage(1);
 
-    // Cập nhật appliedFilters để kích hoạt loadData
     setAppliedFilters({
       sensorName,
       startTime: range.startTime,
@@ -239,11 +243,8 @@ function DataSensor() {
   const handleClearDate = () => {
     setDateInput("");
     setDateError(false);
+    setError("");
   };
-
-  const rows = pageData.content;
-  const totalPages = Math.max(1, pageData.totalPages || 1);
-  const pages = getPages(currentPage, totalPages);
 
   const getValueClass = (sensor) => {
     const name = String(sensor || "").toLowerCase();
@@ -260,6 +261,10 @@ function DataSensor() {
     return "";
   };
 
+  const rows = pageData.content;
+  const totalPages = Math.max(1, pageData.totalPages || 1);
+  const pages = getPages(currentPage, totalPages);
+
   return (
     <div className="data-sensor-page">
       <div className="data-header">
@@ -272,7 +277,6 @@ function DataSensor() {
           <div className="data-avatar">
             <span>👤</span>
           </div>
-
           <div className="data-user-info">
             <strong>{currentUser?.name || "Người dùng"}</strong>
             <small>
@@ -285,7 +289,6 @@ function DataSensor() {
       </div>
 
       <section className="data-filter">
-        {/* Dropdown cảm biến: Thêm lựa chọn Thời gian */}
         <div className="data-select">
           <select
             value={sensorName}
@@ -298,14 +301,11 @@ function DataSensor() {
             <option value="Light">Light</option>
             <option value="Time">Thời gian</option>
           </select>
-
           <ChevronDown size={16} />
         </div>
 
-        {/* Ô lọc thời gian (dùng chung cho mọi cảm biến đã chọn) */}
         <div className={`data-date ${dateError ? "data-date-error" : ""}`}>
           <Clock size={14} />
-
           <input
             type="text"
             value={dateInput}
@@ -322,9 +322,7 @@ function DataSensor() {
               setError("");
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                handleSearch();
-              }
+              if (e.key === "Enter") handleSearch();
             }}
           />
 
@@ -340,8 +338,11 @@ function DataSensor() {
           )}
         </div>
 
-        {/* Nút bấm Tìm kiếm duy nhất để thực hiện lọc */}
-        <button type="button" className="data-search" onClick={handleSearch}>
+        <button
+          type="button"
+          className="data-search"
+          onClick={handleSearch}
+        >
           Tìm kiếm
         </button>
       </section>
@@ -386,15 +387,12 @@ function DataSensor() {
                   return (
                     <tr key={item.id}>
                       <td className="data-id">{item.id}</td>
-
                       <td>{name}</td>
-
                       <td>
                         <span className={`data-value ${getValueClass(name)}`}>
                           {item.value ?? "--"} {item.unit || ""}
                         </span>
                       </td>
-
                       <td>{formatTime(item.time || item.createdAt)}</td>
                     </tr>
                   );
@@ -429,7 +427,6 @@ function DataSensor() {
                   </option>
                 ))}
               </select>
-
               <ChevronDown size={16} />
             </div>
 
@@ -450,7 +447,10 @@ function DataSensor() {
 
             {pages.map((page, i) =>
               typeof page === "string" ? (
-                <span key={`${page}-${i}`} className="data-page-dots">
+                <span
+                  key={`${page}-${i}`}
+                  className="data-page-dots"
+                >
                   ...
                 </span>
               ) : (

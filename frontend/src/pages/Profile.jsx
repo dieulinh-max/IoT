@@ -1,70 +1,125 @@
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import "../styles/Profile.css";
 
 const API_URL = "http://localhost:8080/api/profile";
-const STUDENT_ID = "B23DCCN481";
 
-const PROFILE_LINKS = {
-  github: {
-    label: "github",
+const PROFILE_LINKS = [
+  {
+    label: "Github:",
+    text: "github",
     url: "https://github.com/dieulinh-max/IoT",
   },
-  figma: {
-    label: "figma",
+  {
+    label: "Figma:",
+    text: "figma",
     url: "https://www.figma.com/design/pMdq8HeZuH9jCAPJzDnh59/IoT1?node-id=0-1&m=draw",
   },
-  postman: {
-    label: "postman",
+  {
+    label: "Postman:",
+    text: "postman",
     url: "https://documenter.getpostman.com/view/54857062/2sBYHURebS",
   },
-  pdf: {
-    label: "BaoCao",
+  {
+    label: "PDF mô tả dự án:",
+    text: "BaoCao",
     url: "https://docs.google.com/document/d/1TXR0Wd-vAHg5NkOI1CESGBNqrZC5ocJA/edit",
   },
-};
+];
+
+// Đọc người dùng đã lưu khi đăng nhập
+function getStoredUser() {
+  try {
+    const raw =
+      localStorage.getItem("sensorIoTUser") ||
+      sessionStorage.getItem("sensorIoTUser");
+
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
 function Profile() {
   const [profileData, setProfileData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        setLoading(true);
-        setError("");
+  const fetchProfile = useCallback(async () => {
+    setLoading(true);
+    setError("");
 
-        const response = await fetch(
-          `${API_URL}?studentId=${encodeURIComponent(STUDENT_ID)}`
+    try {
+      const user = getStoredUser();
+      const token = user?.token;
+
+      if (!token) {
+        throw new Error(
+          "Không tìm thấy JWT. Vui lòng đăng xuất và đăng nhập lại."
         );
+      }
 
-        if (!response.ok) {
-          throw new Error("Không thể tải thông tin cá nhân.");
+      // Ưu tiên mã sinh viên của tài khoản đã đăng nhập
+      const studentId = user.msv;
+
+      if (!studentId) {
+        throw new Error(
+          "Không tìm thấy mã sinh viên trong thông tin đăng nhập."
+        );
+      }
+
+      const params = new URLSearchParams({
+        studentId: studentId,
+      });
+
+      const response = await fetch(`${API_URL}?${params.toString()}`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        let message = `Không thể tải thông tin cá nhân (HTTP ${response.status}).`;
+
+        try {
+          const body = await response.json();
+          message = body.message || body.error || message;
+        } catch {
+          // Phản hồi không phải JSON
         }
 
-        const data = await response.json();
-        setProfileData(data);
-      } catch (err) {
-        setError(err.message || "Đã xảy ra lỗi khi tải Profile.");
-      } finally {
-        setLoading(false);
+        throw new Error(message);
       }
-    };
 
-    fetchProfile();
+      const data = await response.json();
+      setProfileData(data);
+    } catch (err) {
+      setError(err.message || "Đã xảy ra lỗi khi tải Profile.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useEffect(() => {
+    fetchProfile();
+  }, [fetchProfile]);
+
   if (loading) {
-    return <div className="profile-page">Đang tải thông tin...</div>;
+    return (
+      <div className="profile-page">
+        Đang tải thông tin...
+      </div>
+    );
   }
 
   if (error) {
     return (
       <div className="profile-page">
-        <p>{error}</p>
-        <button onClick={() => window.location.reload()}>
+        <p role="alert">{error}</p>
+        <button type="button" onClick={fetchProfile}>
           Thử lại
         </button>
       </div>
@@ -79,13 +134,6 @@ function Profile() {
     );
   }
 
-  const links = [
-    { label: "Github:", ...PROFILE_LINKS.github },
-    { label: "Figma:", ...PROFILE_LINKS.figma },
-    { label: "Postman:", ...PROFILE_LINKS.postman },
-    { label: "PDF mô tả dự án:", ...PROFILE_LINKS.pdf },
-  ];
-
   return (
     <div className="profile-page">
       <div className="profile-wrapper">
@@ -95,10 +143,12 @@ function Profile() {
               <span className="profile-avatar-icon">👤</span>
             </div>
 
-            <h1 className="profile-name">{profileData.name}</h1>
+            <h1 className="profile-name">
+              {profileData.name || "Chưa cập nhật"}
+            </h1>
 
             <div className="profile-msv-badge">
-              MSV: {profileData.studentId}
+              MSV: {profileData.studentId || getStoredUser()?.msv || "--"}
             </div>
           </div>
 
@@ -112,19 +162,17 @@ function Profile() {
               </span>
             </div>
 
-            {links.map((link) => (
+            {PROFILE_LINKS.map((link) => (
               <div className="profile-info-row" key={link.label}>
                 <span className="profile-label">{link.label}</span>
 
                 <a
                   href={link.url}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="profile-link-btn"
                 >
-                  <span>{link.label === "PDF mô tả dự án:"
-                    ? link.label + " " + link.label
-                    : link.label}</span>
+                  <span>{link.text}</span>
                   <ArrowUpRight size={15} />
                 </a>
               </div>
